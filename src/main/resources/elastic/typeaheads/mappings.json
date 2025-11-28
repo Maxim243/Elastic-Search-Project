@@ -15,12 +15,10 @@
       "doc_values": false
     },
     "itemCount": {
-      "type": "integer",
-      "doc_values": false
+      "type": "integer"
     },
     "rank": {
-      "type": "float",
-      "doc_values": false
+      "type": "float"
     }
   }
 }
