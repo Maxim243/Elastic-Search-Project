@@ -3,6 +3,7 @@ com.griddynamics.es.graduation.project:
   user: ${ES_USER:}
   pass: ${ES_PASS:}
   index: ${ES_INDEX:typeaheads}
+  indices_amount: ${ES_INDICES_COUNT:5}
 
   files:
     mappings: classpath:elastic/typeaheads/mappings.json

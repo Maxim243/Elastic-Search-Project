@@ -2,15 +2,12 @@ package com.griddynamics.esgraduationproject.common;
 
 import com.griddynamics.esgraduationproject.service.TypeaheadService;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import static org.hamcrest.Matchers.greaterThan;
-import static org.hamcrest.Matchers.greaterThanOrEqualTo;
-import static org.hamcrest.Matchers.hasSize;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.notNullValue;
+import java.io.IOException;
+
+import static org.hamcrest.Matchers.*;
 
 public class ExercisesIntegrationTest extends BaseTest {
 
@@ -20,9 +17,10 @@ public class ExercisesIntegrationTest extends BaseTest {
     TypeaheadService typeaheadService;
 
     @Before
-    public void init() throws InterruptedException {
-        typeaheadService.recreateIndex();
-        Thread.sleep(1100); // TASK 6: Why if we change 1100 to 500, then some tests fail? How to fix it, so that all tests pass with 500?
+    public void init() throws IOException, InterruptedException {
+        typeaheadService.createIndex();
+        typeaheadService.deletePreviousIndices();
+        Thread.sleep(1100);
     }
 
     // TASK 1: Fix 2 bugs in config and recreation/filling of the index.
@@ -48,8 +46,8 @@ public class ExercisesIntegrationTest extends BaseTest {
             .post()
             .then()
             .statusCode(200)
-            .body("totalHits", is(36))
-            .body("typeaheads", hasSize(36));
+            .body("totalHits", is(38))
+            .body("typeaheads", hasSize(38));
     }
 
     // TASK 3: Fix bug in search by text
@@ -100,78 +98,77 @@ public class ExercisesIntegrationTest extends BaseTest {
     // TASK 5: Add a new parameter "considerItemCountInSorting" to the request that change sorting (when it's true)
     // from: _score DESC, rank DESC, _id DESC
     // to: _score DESC, itemCount DESC, _id DESC
-    @Ignore
     @Test
     public void testSortingByItemCountWorks() {
 
         // considerItemCountInSorting = true
         client
-//            .logResponse() // Use this method to log the response to debug tests
+            .logResponse() // Use this method to log the response to debug tests
             .typeaheadRequest()
-            .body("{\"size\": 3, \"textQuery\": \"sho\", \"considerItemCountInSorting\": true}")
+            .body("{\"size\": 3, \"textQuery\": \"jackets\", \"considerItemCountInSorting\": true}")
             .post()
             .then()
             .statusCode(200)
             // Facets
             // TotalHits
-            .body("totalHits", is(21))
+            .body("totalHits", is(5))
             // Typeaheads
             .body("typeaheads", hasSize(3))
-            .body("typeaheads[0].name", is("Sneakers and shoes"))
-            .body("typeaheads[0].rank", is(51))
-            .body("typeaheads[0].itemCount", is(448))
-            .body("typeaheads[1].name", is("Shorts"))
-            .body("typeaheads[1].rank", is(20))
-            .body("typeaheads[1].itemCount", is(285))
-            .body("typeaheads[2].name", is("Women's sneakers & shoes"))
+            .body("typeaheads[0].name", is("Jackets and Accessories"))
+            .body("typeaheads[0].rank", is(50))
+            .body("typeaheads[0].itemCount", is(329))
+            .body("typeaheads[1].name", is("Jackets and Coats"))
+            .body("typeaheads[1].rank", is(50))
+            .body("typeaheads[1].itemCount", is(310))
+            .body("typeaheads[2].name", is("Jackets"))
             .body("typeaheads[2].rank", is(50))
-            .body("typeaheads[2].itemCount", is(247))
+            .body("typeaheads[2].itemCount", is(300))
         ;
 
         // considerItemCountInSorting = false
         client
-//            .logResponse() // Use this method to log the response to debug tests
+            .logResponse() // Use this method to log the response to debug tests
             .typeaheadRequest()
-            .body("{\"size\": 3, \"textQuery\": \"sho\", \"considerItemCountInSorting\": false}")
+            .body("{\"size\": 3, \"textQuery\": \"jackets\", \"considerItemCountInSorting\": false}")
             .post()
             .then()
             .statusCode(200)
             // TotalHits
-            .body("totalHits", is(21))
+            .body("totalHits", is(5))
             // Typeaheads
             .body("typeaheads", hasSize(3))
-            .body("typeaheads[0].name", is("Sneakers and shoes"))
-            .body("typeaheads[0].rank", is(51))
-            .body("typeaheads[0].itemCount", is(448))
-            .body("typeaheads[1].name", is("Women's sneakers & shoes"))
+            .body("typeaheads[0].name", is("Jackets"))
+            .body("typeaheads[0].rank", is(50))
+            .body("typeaheads[0].itemCount", is(300))
+            .body("typeaheads[1].name", is("Jackets and Coats"))
             .body("typeaheads[1].rank", is(50))
-            .body("typeaheads[1].itemCount", is(247))
-            .body("typeaheads[2].name", is("Men's sneakers & shoes"))
-            .body("typeaheads[2].rank", is(48))
-            .body("typeaheads[2].itemCount", is(201))
+            .body("typeaheads[1].itemCount", is(310))
+            .body("typeaheads[2].name", is("Jackets and Accessories"))
+            .body("typeaheads[2].rank", is(50))
+            .body("typeaheads[2].itemCount", is(329))
         ;
 
         // considerItemCountInSorting isn't specified (default = false)
         client
 //            .logResponse() // Use this method to log the response to debug tests
             .typeaheadRequest()
-            .body("{\"size\": 3, \"textQuery\": \"sho\"}")
-            .post()
-            .then()
-            .statusCode(200)
-            // TotalHits
-            .body("totalHits", is(21))
-            // Typeaheads
-            .body("typeaheads", hasSize(3))
-            .body("typeaheads[0].name", is("Sneakers and shoes"))
-            .body("typeaheads[0].rank", is(51))
-            .body("typeaheads[0].itemCount", is(448))
-            .body("typeaheads[1].name", is("Women's sneakers & shoes"))
-            .body("typeaheads[1].rank", is(50))
-            .body("typeaheads[1].itemCount", is(247))
-            .body("typeaheads[2].name", is("Men's sneakers & shoes"))
-            .body("typeaheads[2].rank", is(48))
-            .body("typeaheads[2].itemCount", is(201))
+            .body("{\"size\": 3, \"textQuery\": \"jackets\"}")
+                .post()
+                .then()
+                .statusCode(200)
+                // TotalHits
+                .body("totalHits", is(5))
+                // Typeaheads
+                .body("typeaheads", hasSize(3))
+                .body("typeaheads[0].name", is("Jackets"))
+                .body("typeaheads[0].rank", is(50))
+                .body("typeaheads[0].itemCount", is(300))
+                .body("typeaheads[1].name", is("Jackets and Coats"))
+                .body("typeaheads[1].rank", is(50))
+                .body("typeaheads[1].itemCount", is(310))
+                .body("typeaheads[2].name", is("Jackets and Accessories"))
+                .body("typeaheads[2].rank", is(50))
+                .body("typeaheads[2].itemCount", is(329))
         ;
     }
 
