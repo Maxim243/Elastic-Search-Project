@@ -109,14 +109,17 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
     private TypeaheadServiceResponse getTypeaheads(QueryBuilder mainQuery, TypeaheadServiceRequest request) {
         // Create search request
         SearchSourceBuilder ssb = new SearchSourceBuilder()
-            .query(mainQuery)
-            .size(request.getSize());
+                .query(mainQuery)
+                .size(request.getSize());
 
         // Add sorting and aggregation if necessary
         if (!request.isGetAllRequest()) {
             // Sorting
             ssb.sort(new ScoreSortBuilder().order(SortOrder.DESC)); // sort by _score DESC
             ssb.sort(new FieldSortBuilder(RANK_FIELD).order(SortOrder.DESC)); // sort by rank DESC
+            if (request.isConsiderItemCountInSorting()) {
+                ssb.sort(new FieldSortBuilder(ITEM_COUNT_FIELD).order(SortOrder.DESC));
+            }
 
             // Aggregation
             List<AggregationBuilder> aggs = createAggs();
@@ -140,13 +143,13 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
 
         // Facets: 1 range aggregation by itemCount
         RangeAggregationBuilder itemCountAgg = AggregationBuilders
-            .range(ITEM_COUNT_AGG)
-            .field(ITEM_COUNT_FIELD)
-            .keyed(true)
-            .addRange(new RangeAggregator.Range("empty", null, 1.0))
-            .addRange("small", 1.0, 55.0)
-            .addRange("medium", 55.0, 151.0)
-            .addRange(new RangeAggregator.Range("large", 151.0, null));
+                .range(ITEM_COUNT_AGG)
+                .field(ITEM_COUNT_FIELD)
+                .keyed(true)
+                .addRange(new RangeAggregator.Range("empty", null, 1.0))
+                .addRange("small", 1.0, 55.0)
+                .addRange("medium", 55.0, 151.0)
+                .addRange(new RangeAggregator.Range("large", 151.0, null));
         // Stats sub aggregation by the same field
         itemCountAgg.subAggregation(new StatsAggregationBuilder(RANK_STATS_SUB_AGG).field(RANK_FIELD));
 
@@ -163,8 +166,8 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
 
         // Documents
         List<Map<String, Object>> typeaheads = Arrays.stream(searchResponse.getHits().getHits())
-            .map(SearchHit::getSourceAsMap)
-            .collect(Collectors.toList());
+                .map(SearchHit::getSourceAsMap)
+                .collect(Collectors.toList());
         response.setTypeaheads(typeaheads);
 
         // Facets (1 facet by itemCount, if it exists):
@@ -173,9 +176,9 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
 
             ParsedRange parsedRange = searchResponse.getAggregations().get(ITEM_COUNT_AGG);
             parsedRange.getBuckets().stream()
-                .sorted(Comparator.comparingDouble(bucket -> (Double) bucket.getFrom()))
-                .forEach(bucket -> {
-                    String key = bucket.getKeyAsString();
+                    .sorted(Comparator.comparingDouble(bucket -> (Double) bucket.getFrom()))
+                    .forEach(bucket -> {
+                        String key = bucket.getKeyAsString();
                         Long docCount = bucket.getDocCount();
                         Map<String, Number> bucketValues = new LinkedHashMap<>();
                         bucketValues.put("count", docCount);
@@ -236,14 +239,14 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
 
     private int getDistanceByTermLength(final String token) {
         return token.length() >= fuzzyTwoStartsFromLength
-            ? 2
-            : (token.length() >= fuzzyOneStartsFromLength ? 1 : 0);
+                ? 2
+                : (token.length() >= fuzzyOneStartsFromLength ? 1 : 0);
     }
 
     private float getBoostByDistance(final int distance) {
         return distance == 0
-            ? fuzzyZeroBoost
-            : (distance == 1 ? fuzzyOneBoost : fuzzyTwoBoost);
+                ? fuzzyZeroBoost
+                : (distance == 1 ? fuzzyOneBoost : fuzzyTwoBoost);
     }
 
     @Override
@@ -285,8 +288,8 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
 
     private void createIndex(String indexName, String settings, String mappings) {
         CreateIndexRequest createIndexRequest = new CreateIndexRequest(indexName)
-            .mapping(mappings, XContentType.JSON)
-            .settings(settings, XContentType.JSON);
+                .mapping(mappings, XContentType.JSON)
+                .settings(settings, XContentType.JSON);
 
         CreateIndexResponse createIndexResponse;
         try {
@@ -376,9 +379,9 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
 
         if (isOk) {
             return new IndexRequest(esIndexName)
-                .id(esId)
-                .opType(opType)
-                .source(line2, XContentType.JSON);
+                    .id(esId)
+                    .opType(opType)
+                    .source(line2, XContentType.JSON);
         } else {
             return null;
         }
