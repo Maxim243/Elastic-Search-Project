@@ -64,7 +64,6 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
     private static final String NAME_FIELD = "name";
     private static final String ITEM_COUNT_FIELD = "itemCount";
     private static final String RANK_FIELD = "rank";
-    private static final String ID_FIELD = "_id";
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -118,7 +117,6 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
             // Sorting
             ssb.sort(new ScoreSortBuilder().order(SortOrder.DESC)); // sort by _score DESC
             ssb.sort(new FieldSortBuilder(RANK_FIELD).order(SortOrder.DESC)); // sort by rank DESC
-            ssb.sort(new FieldSortBuilder(ID_FIELD).order(SortOrder.DESC)); // tie breaker: sort by _id DESC
 
             // Aggregation
             List<AggregationBuilder> aggs = createAggs();

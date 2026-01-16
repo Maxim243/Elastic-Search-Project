@@ -53,7 +53,6 @@ public class ExercisesIntegrationTest extends BaseTest {
     }
 
     // TASK 3: Fix bug in search by text
-    @Ignore
     @Test
     public void testSearchByTextWorks() {
         client
