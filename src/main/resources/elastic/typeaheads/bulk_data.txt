@@ -69,4 +69,8 @@
 {"create": {"_id": "35"}}
 {"name": "Pants", "imageLocation": "/img/cat35.png", "destinationUrl": "/-c/-pants_cat35_.html", "itemCount": 382, "rank": 19}
 {"create": {"_id": "36"}}
-{"name": "Jackets", "imageLocation": "/img/cat36.png", "destinationUrl": "/-c/-jackets_cat36_.html", "itemCount": 329, "rank": 18}
+{"name": "Jackets", "imageLocation": "/img/cat36.png", "destinationUrl": "/-c/-jackets_cat36_.html", "itemCount": 300, "rank": 50}
+{"create": {"_id": "37"}}
+{"name": "Jackets and Coats", "imageLocation": "/img/cat36.png", "destinationUrl": "/-c/-jackets_cat36_.html", "itemCount": 310, "rank": 50}
+{"create": {"_id": "38"}}
+{"name": "Jackets and Accessories", "imageLocation": "/img/cat36.png", "destinationUrl": "/-c/-jackets_cat36_.html", "itemCount": 329, "rank": 50}

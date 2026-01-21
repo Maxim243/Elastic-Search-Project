@@ -7,19 +7,25 @@ import com.google.common.io.Resources;
 import com.griddynamics.esgraduationproject.model.TypeaheadServiceRequest;
 import com.griddynamics.esgraduationproject.model.TypeaheadServiceResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.action.DocWriteRequest;
+import org.elasticsearch.action.admin.indices.alias.IndicesAliasesRequest;
+import org.elasticsearch.action.admin.indices.alias.get.GetAliasesRequest;
 import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest;
+import org.elasticsearch.action.admin.indices.refresh.RefreshRequest;
 import org.elasticsearch.action.bulk.BulkRequest;
 import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.support.master.AcknowledgedResponse;
+import org.elasticsearch.client.GetAliasesResponse;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.client.indices.CreateIndexRequest;
 import org.elasticsearch.client.indices.CreateIndexResponse;
 import org.elasticsearch.client.indices.GetIndexRequest;
+import org.elasticsearch.cluster.metadata.AliasMetaData;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.DisMaxQueryBuilder;
@@ -45,6 +51,8 @@ import org.springframework.stereotype.Component;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -71,7 +79,7 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
     private RestHighLevelClient esClient;
 
     @Value("${com.griddynamics.es.graduation.project.index}")
-    private String indexName;
+    private String aliasName;
 
     @Value("${com.griddynamics.es.graduation.project.request.fuzziness.startsFromLength.one:4}")
     int fuzzyOneStartsFromLength;
@@ -109,14 +117,17 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
     private TypeaheadServiceResponse getTypeaheads(QueryBuilder mainQuery, TypeaheadServiceRequest request) {
         // Create search request
         SearchSourceBuilder ssb = new SearchSourceBuilder()
-            .query(mainQuery)
-            .size(request.getSize());
+                .query(mainQuery)
+                .size(request.getSize());
 
         // Add sorting and aggregation if necessary
         if (!request.isGetAllRequest()) {
             // Sorting
             ssb.sort(new ScoreSortBuilder().order(SortOrder.DESC)); // sort by _score DESC
             ssb.sort(new FieldSortBuilder(RANK_FIELD).order(SortOrder.DESC)); // sort by rank DESC
+            if (request.isConsiderItemCountInSorting()) {
+                ssb.sort(new FieldSortBuilder(ITEM_COUNT_FIELD).order(SortOrder.DESC));
+            }
 
             // Aggregation
             List<AggregationBuilder> aggs = createAggs();
@@ -124,7 +135,7 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
         }
 
         // Search in ES
-        SearchRequest searchRequest = new SearchRequest(indexName).source(ssb);
+        SearchRequest searchRequest = new SearchRequest(aliasName).source(ssb);
         try {
             SearchResponse searchResponse = esClient.search(searchRequest, RequestOptions.DEFAULT);
             // Build service response
@@ -140,13 +151,13 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
 
         // Facets: 1 range aggregation by itemCount
         RangeAggregationBuilder itemCountAgg = AggregationBuilders
-            .range(ITEM_COUNT_AGG)
-            .field(ITEM_COUNT_FIELD)
-            .keyed(true)
-            .addRange(new RangeAggregator.Range("empty", null, 1.0))
-            .addRange("small", 1.0, 55.0)
-            .addRange("medium", 55.0, 151.0)
-            .addRange(new RangeAggregator.Range("large", 151.0, null));
+                .range(ITEM_COUNT_AGG)
+                .field(ITEM_COUNT_FIELD)
+                .keyed(true)
+                .addRange(new RangeAggregator.Range("empty", null, 1.0))
+                .addRange("small", 1.0, 55.0)
+                .addRange("medium", 55.0, 151.0)
+                .addRange(new RangeAggregator.Range("large", 151.0, null));
         // Stats sub aggregation by the same field
         itemCountAgg.subAggregation(new StatsAggregationBuilder(RANK_STATS_SUB_AGG).field(RANK_FIELD));
 
@@ -163,8 +174,8 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
 
         // Documents
         List<Map<String, Object>> typeaheads = Arrays.stream(searchResponse.getHits().getHits())
-            .map(SearchHit::getSourceAsMap)
-            .collect(Collectors.toList());
+                .map(SearchHit::getSourceAsMap)
+                .collect(Collectors.toList());
         response.setTypeaheads(typeaheads);
 
         // Facets (1 facet by itemCount, if it exists):
@@ -173,9 +184,9 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
 
             ParsedRange parsedRange = searchResponse.getAggregations().get(ITEM_COUNT_AGG);
             parsedRange.getBuckets().stream()
-                .sorted(Comparator.comparingDouble(bucket -> (Double) bucket.getFrom()))
-                .forEach(bucket -> {
-                    String key = bucket.getKeyAsString();
+                    .sorted(Comparator.comparingDouble(bucket -> (Double) bucket.getFrom()))
+                    .forEach(bucket -> {
+                        String key = bucket.getKeyAsString();
                         Long docCount = bucket.getDocCount();
                         Map<String, Number> bucketValues = new LinkedHashMap<>();
                         bucketValues.put("count", docCount);
@@ -236,27 +247,91 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
 
     private int getDistanceByTermLength(final String token) {
         return token.length() >= fuzzyTwoStartsFromLength
-            ? 2
-            : (token.length() >= fuzzyOneStartsFromLength ? 1 : 0);
+                ? 2
+                : (token.length() >= fuzzyOneStartsFromLength ? 1 : 0);
     }
 
     private float getBoostByDistance(final int distance) {
         return distance == 0
-            ? fuzzyZeroBoost
-            : (distance == 1 ? fuzzyOneBoost : fuzzyTwoBoost);
+                ? fuzzyZeroBoost
+                : (distance == 1 ? fuzzyOneBoost : fuzzyTwoBoost);
     }
 
     @Override
-    public void recreateIndex() {
-        if (indexExists(indexName)) {
-            deleteIndex(indexName);
-        }
+    public void createIndex() throws IOException {
+        String generatedUniqueIndexName = generateUniqueIndexName(aliasName);
 
         String settings = getStrFromResource(typeaheadsSettingsFile);
         String mappings = getStrFromResource(typeaheadsMappingsFile);
-        createIndex(indexName, settings, mappings);
+        createIndex(generatedUniqueIndexName, settings, mappings);
 
+        updateIndexAlias(generatedUniqueIndexName);
         processBulkInsertData(typeaheadsBulkInsertDataFile);
+        esClient.indices().refresh(new RefreshRequest(generatedUniqueIndexName), RequestOptions.DEFAULT);
+    }
+
+    @Override
+    public void deletePreviousIndices(String indexPrefix, Long keepIndices) throws IOException {
+        GetIndexRequest getIndexRequest = new GetIndexRequest(indexPrefix + "*");
+
+        List<String> allIndices = Arrays.asList(esClient.indices().get(getIndexRequest, RequestOptions.DEFAULT).getIndices());
+
+        List<String> sortedIndices = allIndices
+                .stream()
+                .sorted(Comparator.reverseOrder())
+                .toList();
+
+        List<String> indicesToDelete = sortedIndices
+                .stream()
+                .skip(keepIndices)
+                .toList();
+
+        for (String index : indicesToDelete) {
+            esClient.indices().delete(new DeleteIndexRequest(index), RequestOptions.DEFAULT);
+        }
+    }
+
+    private void updateIndexAlias(String generatedUniqueIndexName) {
+        try {
+            IndicesAliasesRequest aliasesRequest = new IndicesAliasesRequest();
+            removeAliasesAction(aliasesRequest);
+            addAliasAction(aliasesRequest, generatedUniqueIndexName);
+            esClient.indices().updateAliases(aliasesRequest, RequestOptions.DEFAULT);
+        } catch (IOException | ElasticsearchException e) {
+            deleteIndex(generatedUniqueIndexName);
+        }
+    }
+
+    private void removeAliasesAction(IndicesAliasesRequest indicesAliasesRequest) throws IOException {
+        GetAliasesResponse response = esClient.indices().getAlias(
+                new GetAliasesRequest(aliasName), RequestOptions.DEFAULT);
+
+       AliasMetaData aliasMetaData = AliasMetaData
+               .newAliasMetaDataBuilder(aliasName)
+               .build();
+
+        List<String> indicesToBeCleared = response.getAliases().entrySet()
+                .stream()
+                .filter(entry -> entry.getValue().contains(aliasMetaData))
+                .map(Map.Entry::getKey)
+                .toList();
+
+        if (!indicesToBeCleared.isEmpty()) {
+            IndicesAliasesRequest.AliasActions removeAction = new IndicesAliasesRequest.AliasActions(IndicesAliasesRequest.AliasActions.Type.REMOVE)
+                    .indices(indicesToBeCleared.toArray(new String[0]))
+                    .alias(aliasName);
+
+            indicesAliasesRequest.addAliasAction(removeAction);
+        }
+    }
+
+    private void addAliasAction(IndicesAliasesRequest indicesAliasesRequest, String generatedUniqueIndexName) {
+        IndicesAliasesRequest.AliasActions addAction =
+                new IndicesAliasesRequest.AliasActions(IndicesAliasesRequest.AliasActions.Type.ADD)
+                        .index(generatedUniqueIndexName)
+                        .alias(aliasName);
+
+        indicesAliasesRequest.addAliasAction(addAction);
     }
 
     private boolean indexExists(String indexName) {
@@ -285,8 +360,8 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
 
     private void createIndex(String indexName, String settings, String mappings) {
         CreateIndexRequest createIndexRequest = new CreateIndexRequest(indexName)
-            .mapping(mappings, XContentType.JSON)
-            .settings(settings, XContentType.JSON);
+                .mapping(mappings, XContentType.JSON)
+                .settings(settings, XContentType.JSON);
 
         CreateIndexResponse createIndexResponse;
         try {
@@ -301,6 +376,13 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
             log.info("Index {} has been created.", indexName);
         }
     }
+
+    private String generateUniqueIndexName(String generalName) {
+        LocalDateTime now = LocalDateTime.now();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+        return generalName + "_" + now.format(formatter);
+    }
+
 
     private static String getStrFromResource(Resource resource) {
         try {
@@ -358,7 +440,7 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
             opType = DocWriteRequest.OpType.fromString(esOpType);
 
             JsonNode indexJsonNode = objectMapper.readTree(line1).iterator().next().get("_index");
-            esIndexName = (indexJsonNode != null ? indexJsonNode.textValue() : indexName);
+            esIndexName = (indexJsonNode != null ? indexJsonNode.textValue() : aliasName);
 
             JsonNode idJsonNode = objectMapper.readTree(line1).iterator().next().get("_id");
             esId = (idJsonNode != null ? idJsonNode.textValue() : null);
@@ -376,9 +458,9 @@ public class TypeaheadRepositoryImpl implements TypeaheadRepository {
 
         if (isOk) {
             return new IndexRequest(esIndexName)
-                .id(esId)
-                .opType(opType)
-                .source(line2, XContentType.JSON);
+                    .id(esId)
+                    .opType(opType)
+                    .source(line2, XContentType.JSON);
         } else {
             return null;
         }

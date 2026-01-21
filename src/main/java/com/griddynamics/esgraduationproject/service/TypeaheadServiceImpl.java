@@ -7,6 +7,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+
 @Component
 public class TypeaheadServiceImpl implements TypeaheadService {
 
@@ -16,6 +18,10 @@ public class TypeaheadServiceImpl implements TypeaheadService {
     private int defaultGetAllSize;
     @Value("${com.griddynamics.es.graduation.project.request.minQueryLength}")
     private int minQueryLength;
+    @Value("${com.griddynamics.es.graduation.project.index}")
+    private String prefixIndexName;
+    @Value("${com.griddynamics.es.graduation.project.indices_amount}")
+    private Long keepIndicesAmount;
 
     @Autowired
     private TypeaheadRepository typeaheadRepository;
@@ -39,7 +45,12 @@ public class TypeaheadServiceImpl implements TypeaheadService {
     }
 
     @Override
-    public void recreateIndex() {
-        typeaheadRepository.recreateIndex();
+    public void createIndex() throws IOException {
+        typeaheadRepository.createIndex();
+    }
+
+    @Override
+    public void deletePreviousIndices() throws IOException {
+        typeaheadRepository.deletePreviousIndices(prefixIndexName, keepIndicesAmount);
     }
 }
